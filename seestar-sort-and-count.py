@@ -32,6 +32,20 @@ def get_fits_exposure(file_path: Path) -> float:
         pass
     return 0.0
 
+## Directory integration totaling function
+def calculate_folder_metrics(folder_path: Path) -> tuple[int, float]:
+    ## Scans a folder and returns total file count and accumulated exposure seconds
+    count = 0
+    total_seconds = 0.0
+
+    if folder_path.exists() and folder_path.is_dir():
+        for file_path in folder_path.iterdir():
+            if file_path.is_file():
+                count += 1
+                total_seconds += get_fits_exposure(file_path)
+
+    return count, total_seconds
+
 ## Sorting and counting function
 def sort_seestar_filters(target_directory: str | Path) -> None:
     ## Sort SeeStar light data into separate folders based on filters
@@ -56,34 +70,31 @@ def sort_seestar_filters(target_directory: str | Path) -> None:
     lp_dir.mkdir(exist_ok=True)
     ircut_dir.mkdir(exist_ok=True)
 
-    ## Start counters and integration trackers
-    lp_count = 0
-    ircut_count = 0
-    total_lp_seconds = 0.0
-    total_ircut_seconds = 0.0
+    ## Track files moved during this run
+    lp_moved = 0
+    ircut_moved = 0
 
-    # Scan and move files
+    # Scan root directory and move files into filter subfolders
     for file_path in list(source_dir.iterdir()):
         if file_path.is_file():
             filename = file_path.name
 
-            # Read exposure time directly from header before moving file
-            exposure_sec = get_fits_exposure(file_path)
-
             if "_LP_" in filename:
                 shutil.move(str(file_path), str(lp_dir / filename))
-                lp_count += 1
-                total_lp_seconds += exposure_sec
+                lp_moved += 1
             elif "_IRCUT_" in filename:
                 shutil.move(str(file_path), str(ircut_dir / filename))
-                ircut_count += 1
-                total_ircut_seconds += exposure_sec
+                ircut_moved += 1
+
+    ## Calculate totals directly from the target folders POST-move
+    lp_count, total_lp_seconds = calculate_folder_metrics(lp_dir)
+    ircut_count, total_ircut_seconds = calculate_folder_metrics(ircut_dir)
 
     # Rounded hour calculations for each filter and total
     lp_hours_rounded = round(total_lp_seconds / 3600.0)
     ircut_hours_rounded = round(total_ircut_seconds / 3600.0)
 
-    # Totals across all light frames
+    # Totals across all light frames in subfolders
     total_files = lp_count + ircut_count
     total_seconds = total_lp_seconds + total_ircut_seconds
     total_hours_rounded = round(total_seconds / 3600.0)
@@ -91,8 +102,9 @@ def sort_seestar_filters(target_directory: str | Path) -> None:
     ## Format the output summary string
     summary = (
         f"  SeeStar Filter & Integration Summary: {source_dir.name}\n"
-        f"  - LP Filter Files Moved    : {lp_count} ({total_lp_seconds:.1f}s | ~{lp_hours_rounded} hrs)\n"
-        f"  - IRCUT Filter Files Moved : {ircut_count} ({total_ircut_seconds:.1f}s | ~{ircut_hours_rounded} hrs)\n"
+        f"  - Newly Moved Frames       : {lp_moved} LP | {ircut_moved} IRCUT\n"
+        f"  - LP Filter Total Files    : {lp_count} ({total_lp_seconds:.1f}s | ~{lp_hours_rounded} hrs)\n"
+        f"  - IRCUT Filter Total Files : {ircut_count} ({total_ircut_seconds:.1f}s | ~{ircut_hours_rounded} hrs)\n"
         f"  - Total Light Frames       : {total_files}\n"
         f"  - Total Integration Time   : {total_seconds:.1f} seconds\n"
         f"  - Total Integration (Hours): {total_hours_rounded} hour(s) (rounded)\n"
